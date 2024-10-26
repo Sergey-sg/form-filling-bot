@@ -1,7 +1,7 @@
 import asyncio
 import aiohttp
 from aiogram import Bot, Dispatcher
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from aiogram.filters import Command
 from bs4 import BeautifulSoup
 import random
@@ -27,27 +27,10 @@ from funcs import (generate_name,
                    is_demo_limit_reached,
                    users)
 from funcs import status_translation
-
-API_TOKEN = ''
-
-# Дані проксі
-USE_PROXY_1 = True
-PROXY_IP_1 = ''
-PROXY_PORT_1 = ''
-PROXY_LOGIN_1 = ''
-PROXY_PASSWORD_1 = ''
-
-USE_PROXY_2 = True
-PROXY_IP_2 = ''
-PROXY_PORT_2 = ''
-PROXY_LOGIN_2 = ''
-PROXY_PASSWORD_2 = ''
-
-USE_PROXY_3 = True
-PROXY_IP_3 = ''
-PROXY_PORT_3 = ''
-PROXY_LOGIN_3 = ''
-PROXY_PASSWORD_3 = ''
+from config import (API_TOKEN, USE_PROXY_1, USE_PROXY_2, USE_PROXY_3, PROXY_IP_1, PROXY_PORT_1, PROXY_LOGIN_1, 
+    PROXY_PASSWORD_1, PROXY_IP_2, PROXY_PORT_2, PROXY_LOGIN_2, PROXY_PASSWORD_2, PROXY_IP_3, 
+    PROXY_PORT_3, PROXY_LOGIN_3, PROXY_PASSWORD_3
+)
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
@@ -59,20 +42,20 @@ logger = logging.getLogger(__name__)
 # Глобальні змінні для зберігання стану бота
 user_state = {}
 user_urls = {}
+active_sessions = {}
 user_request_counter = {}
 user_durations = {}  # Тривалість для кожного користувача
 user_frequencies = {}  # Частота для кожного користувача
 
-# Файл для зберігання даних користувачів
-USERS_FILE = 'users.json'
-
+async def clear_state(user_id):
+    user_state.pop(user_id, None)
 
 # Обробник команди /start
 @dp.message(Command('start'))
 async def start_handler(message: Message):
     user_id = message.from_user.id
     register_user(user_id)
-
+    await clear_state(user_id)
     user_state[user_id] = 'waiting_for_start'
     await message.answer(
         '⚡️ Привіт! За допомогою цього боту ти можеш відправити заявки на будь які сайти з формою\n'
@@ -81,6 +64,61 @@ async def start_handler(message: Message):
         '🔥 Тисни кнопку нижче та запускай відправку!',
         reply_markup=get_start_keyboard(user_id)
     )
+
+
+# Обробник кнопки "Підтримка"
+@dp.message(lambda message: message.text == "🧑‍💻 Підтримка")
+async def support_handler(message: Message):
+    await clear_state(message.from_user.id)
+    await message.answer("✉️ Для звʼязку з нами звертайтеся до...")
+
+# Обробник кнопки "Профіль"
+@dp.message(lambda message: message.text == "🤵 Профіль")
+async def profile_handler(message: Message):
+    user_id = message.from_user.id
+    await clear_state(user_id)
+    user_data = users.get(user_id, {})
+    registration_date = user_data.get('registration_date')
+    status = user_data.get('status', 'N/A')
+    translated_status = status_translation.get(status, status)
+    total_applications_sent = user_data.get('applications_sent', 0)
+
+    if registration_date:
+        days_since_registration = (datetime.now() - datetime.fromisoformat(registration_date)).days
+        await message.answer(
+            f"<b>🤵 Ваш профіль</b>\n\n"
+            f"📊 Ваш статус: {translated_status}\n"
+            f"🪪 Ваш Telegram ID: <code>{user_id}</code>\n"
+            f"🥇 Ми разом вже {days_since_registration} днів\n"
+            f"📩 Загалом надіслано заявок: {total_applications_sent}",
+            parse_mode='HTML'
+        )
+    else:
+        await message.answer("⚠️ Ви не зареєстровані. Напишіть боту /start")
+
+# Whitelist
+@dp.message(lambda message: message.text == "🔘 Whitelist")
+async def show_whitelist_menu(message: Message):
+    user_id = message.from_user.id
+    await clear_state(user_id)
+    user_data = users.get(user_id, {})
+
+    # Перевірка статусу користувача
+    if user_data.get('status') == 'demo':
+        await message.answer("❌ Ця функція доступна тільки у платній версії боту.")
+        return
+
+    whitelist_keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Додати домен")],
+            [KeyboardButton(text="Список доменів")],
+            [KeyboardButton(text="Повернутися назад")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    await message.answer("Вітаю у меню вайтлисту! Виберіть дію:", reply_markup=whitelist_keyboard)
+
 
 # Обробник кнопки "Змінити статус" для адмінів
 @dp.message(lambda message: users.get(message.from_user.id, {}).get('status') == 'admin' and message.text == "💠 Змінити статус")
@@ -130,56 +168,6 @@ async def handle_new_status_selection(message: Message):
     else:
         await message.answer("⚠️ Некоректний статус. Будь ласка, виберіть із запропонованих варіантів.")
 
-# Обробник кнопки "Підтримка"
-@dp.message(lambda message: message.text == "🧑‍💻 Підтримка")
-async def support_handler(message: Message):
-    await message.answer("✉️ Для звʼязку з нами звертайтеся до...")
-
-# Обробник кнопки "Профіль"
-@dp.message(lambda message: message.text == "🤵 Профіль")
-async def profile_handler(message: Message):
-    user_id = message.from_user.id
-    user_data = users.get(user_id, {})
-    registration_date = user_data.get('registration_date')
-    status = user_data.get('status', 'N/A')
-    translated_status = status_translation.get(status, status)
-    total_applications_sent = user_data.get('applications_sent', 0)
-
-    if registration_date:
-        days_since_registration = (datetime.now() - datetime.fromisoformat(registration_date)).days
-        await message.answer(
-            f"<b>🤵 Ваш профіль</b>\n\n"
-            f"📊 Ваш статус: {translated_status}\n"
-            f"🪪 Ваш Telegram ID: <code>{user_id}</code>\n"
-            f"🥇 Ми разом вже {days_since_registration} днів\n"
-            f"📩 Загалом надіслано заявок: {total_applications_sent}",
-            parse_mode='HTML'
-        )
-    else:
-        await message.answer("⚠️ Ви не зареєстровані. Напишіть боту /start")
-
-# Whitelist
-@dp.message(lambda message: message.text == "🔘 Whitelist")
-async def show_whitelist_menu(message: Message):
-    user_id = message.from_user.id
-    user_data = users.get(user_id, {})
-
-    # Перевірка статусу користувача
-    if user_data.get('status') == 'demo':
-        await message.answer("❌ Ця функція доступна тільки у платній версії боту.")
-        return
-
-    whitelist_keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="Додати домен")],
-            [KeyboardButton(text="Список доменів")],
-            [KeyboardButton(text="Повернутися назад")]
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=True
-    )
-    await message.answer("Вітаю у меню вайтлисту! Виберіть дію:", reply_markup=whitelist_keyboard)
-
 
 @dp.message(lambda message: message.text == "Додати домен")
 async def request_domain(message: Message):
@@ -202,8 +190,8 @@ async def request_domain(message: Message):
 
 
 @dp.message(lambda message: message.text == "Список доменів")
-async def list_domains(message: Message):
-    user_id = message.from_user.id
+async def list_domains(message: Message, user_id=None):
+    user_id = user_id or message.from_user.id
     user_data = users.get(user_id, {})
     user_domains = user_data.get('whitelist', [])
 
@@ -277,12 +265,35 @@ async def add_domain(message: Message):
     # Повертаємося до меню вайтлиста
     await show_whitelist_menu(message)
 
+
+@dp.message(lambda message: message.text == "🚀 Відправка заявок")
+async def start_requesting(message: Message):
+    user_id = message.from_user.id
+    user_state[user_id] = 'main_menu'
+    buttons = [
+        [InlineKeyboardButton(text="🚀 Запустити відправку заявок", callback_data="start_requesting")],
+        [InlineKeyboardButton(text="📋 Активні сесії", callback_data="list_domains")],
+    ]
+    await message.answer("Виберіть опцію:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+
+
+# Обробник натискання інлайн кнопок відправки заявок
+@dp.callback_query(lambda callback_query: callback_query.data in ["start_requesting", "list_domains"])
+async def handle_callback(callback_query: CallbackQuery):
+    user_id = callback_query.from_user.id
+    if callback_query.data == "start_requesting":
+        await callback_query.message.edit_text("Ви обрали: Запустити відправку заявок")
+        await initiate_request(callback_query.message, user_id)
+    elif callback_query.data == "list_domains":
+        await callback_query.message.edit_text("Ви обрали: Активні сесії")
+        await list_domains(callback_query.message, user_id)
+
 # Обробник кнопки "Запустити відправку заявок"
 @dp.message(lambda message:
     (user_state.get(message.from_user.id) == 'waiting_for_start' or user_state.get(message.from_user.id) == 'main_menu')
     and message.text == "🚀 Запустити відправку заявок")
-async def initiate_request(message: Message):
-    user_id = message.from_user.id
+async def initiate_request(message: Message, user_id=None):
+    user_id = user_id or message.from_user.id
     logger.info(f"Користувач {user_id} натиснув кнопку 'Запустити відправку заявок'")
 
     user_data = users.get(user_id, {})
@@ -322,6 +333,7 @@ async def handle_url(message: Message):
     # Перевірка валідності URL
     if is_valid_url(url):
         user_urls[user_id] = url
+        active_sessions[user_id] = active_sessions.get(user_id, []) + [url]
         user_state[user_id] = 'waiting_for_frequency'
         await message.answer("🕰 Як швидко будуть відправлятися заявки?", reply_markup=frequency_keyboard)
     else:

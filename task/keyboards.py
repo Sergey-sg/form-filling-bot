@@ -40,7 +40,7 @@ admin_duration_keyboard = ReplyKeyboardMarkup(
 # Кнопка зупинки відправки
 stop_keyboard = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="Зупинити відправку ❌")]
+        [KeyboardButton(text="Зупинити відправку ❌")],
     ],
     resize_keyboard=True
 )
@@ -49,7 +49,8 @@ stop_keyboard = ReplyKeyboardMarkup(
 start_keyboard = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="🤵 Профіль")],
-        [KeyboardButton(text="🚀 Запустити відправку заявок")],
+        # [KeyboardButton(text="🚀 Запустити відправку заявок")],
+        [KeyboardButton(text="🚀 Відправка заявок")],
         [KeyboardButton(text="🧑‍💻 Підтримка")],
         [KeyboardButton(text="🔘 Whitelist")],
     ],
@@ -59,7 +60,8 @@ start_keyboard = ReplyKeyboardMarkup(
 admin_start_keyboard = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="🤵 Профіль")],
-        [KeyboardButton(text="🚀 Запустити відправку заявок")],
+        # [KeyboardButton(text="🚀 Запустити відправку заявок")],
+        [KeyboardButton(text="🚀 Відправка заявок")],
         [KeyboardButton(text="🧑‍💻 Підтримка")],
         [KeyboardButton(text="🔘 Whitelist")],
         [KeyboardButton(text="💠 Змінити статус")]
