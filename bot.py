@@ -11,26 +11,15 @@ import time
 from urllib.parse import urlsplit, urlunsplit, urlparse
 
 
-from keyboards import frequency_keyboard, demo_duration_keyboard, admin_duration_keyboard, stop_keyboard, start_keyboard, admin_start_keyboard
-from funcs import (generate_name,
-                   generate_phone_number,
-                   is_valid_url,
-                   load_users_data,
-                   get_user_status,
-                   get_start_keyboard,
-                   get_duration_keyboard,
-                   is_valid_url_aiohttp,
-                   load_users,
-                   save_users,
-                   register_user,
-                   extract_domain,
-                   is_demo_limit_reached,
+from keyboards import frequency_keyboard, stop_keyboard, start_keyboard
+from funcs import (generate_name, generate_phone_number, is_valid_url, get_user_status, get_start_keyboard,
+                   get_duration_keyboard, save_users, register_user, extract_domain, is_demo_limit_reached,
                    users)
 from funcs import status_translation
-from config import (API_TOKEN, USE_PROXY_1, USE_PROXY_2, USE_PROXY_3, PROXY_IP_1, PROXY_PORT_1, PROXY_LOGIN_1, 
-    PROXY_PASSWORD_1, PROXY_IP_2, PROXY_PORT_2, PROXY_LOGIN_2, PROXY_PASSWORD_2, PROXY_IP_3, 
-    PROXY_PORT_3, PROXY_LOGIN_3, PROXY_PASSWORD_3
-)
+from config import (API_TOKEN, USE_PROXY_1, USE_PROXY_2, USE_PROXY_3, PROXY_IP_1, PROXY_PORT_1, PROXY_LOGIN_1,
+                    PROXY_PASSWORD_1, PROXY_IP_2, PROXY_PORT_2, PROXY_LOGIN_2, PROXY_PASSWORD_2, PROXY_IP_3,
+                    PROXY_PORT_3, PROXY_LOGIN_3, PROXY_PASSWORD_3
+                    )
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
@@ -43,6 +32,8 @@ logger = logging.getLogger(__name__)
 user_state = {}
 user_urls = {}
 active_sessions = {}
+active_sending = {}
+active_tasks = {}
 user_request_counter = {}
 user_durations = {}  # Тривалість для кожного користувача
 user_frequencies = {}  # Частота для кожного користувача
@@ -65,7 +56,6 @@ async def start_handler(message: Message):
         reply_markup=get_start_keyboard(user_id)
     )
 
-
 # Обробник кнопки "Підтримка"
 @dp.message(lambda message: message.text == "🧑‍💻 Підтримка")
 async def support_handler(message: Message):
@@ -84,7 +74,8 @@ async def profile_handler(message: Message):
     total_applications_sent = user_data.get('applications_sent', 0)
 
     if registration_date:
-        days_since_registration = (datetime.now() - datetime.fromisoformat(registration_date)).days
+        days_since_registration = (
+            datetime.now() - datetime.fromisoformat(registration_date)).days
         await message.answer(
             f"<b>🤵 Ваш профіль</b>\n\n"
             f"📊 Ваш статус: {translated_status}\n"
@@ -96,6 +87,18 @@ async def profile_handler(message: Message):
     else:
         await message.answer("⚠️ Ви не зареєстровані. Напишіть боту /start")
 
+@dp.message(lambda message: message.text == "🚀 Відправка заявок" or message.text == "🚀 Меню заявок")
+async def start_requesting(message: Message):
+    user_id = message.from_user.id
+    user_state[user_id] = 'main_menu'
+    buttons = [
+        [InlineKeyboardButton(
+            text="🚀 Запустити відправку заявок", callback_data="start_requesting")],
+        [InlineKeyboardButton(text="📋 Активні сесії",
+                              callback_data="list_domains")],
+    ]
+    await message.answer("Виберіть опцію:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    
 # Whitelist
 @dp.message(lambda message: message.text == "🔘 Whitelist")
 async def show_whitelist_menu(message: Message):
@@ -119,6 +122,13 @@ async def show_whitelist_menu(message: Message):
     )
     await message.answer("Вітаю у меню вайтлисту! Виберіть дію:", reply_markup=whitelist_keyboard)
 
+# Обробник кнопки "Повернутися назад"
+@dp.message(lambda message: message.text == "Повернутися назад")
+async def back_to_main_menu(message: Message):
+    user_id = message.from_user.id
+    # Скидаємо стан користувача або встановлюємо на основний стан
+    user_state[user_id] = 'main_menu'
+    await message.answer("🔙 Ви повернулися в головне меню.", reply_markup=get_start_keyboard(user_id))
 
 # Обробник кнопки "Змінити статус" для адмінів
 @dp.message(lambda message: users.get(message.from_user.id, {}).get('status') == 'admin' and message.text == "💠 Змінити статус")
@@ -139,7 +149,8 @@ async def handle_user_id_input(message: Message):
         user_state[user_id] = 'waiting_for_new_status'
         user_state['target_user_id'] = int(target_user_id)
         await message.answer(
-            f"🚦 Виберіть новий статус для користувача(Current Status:{user_status}):",
+            f"🚦 Виберіть новий статус для користувача(Current Status:{
+                user_status}):",
             reply_markup=ReplyKeyboardMarkup(
                 keyboard=[
                     [KeyboardButton(text="demo")],
@@ -203,7 +214,8 @@ async def list_domains(message: Message, user_id=None):
 
         # Додаємо кнопки для кожного домену
         for domain in user_domains:
-            domain_buttons.append([KeyboardButton(text=domain)])  # Кнопка для домену
+            # Кнопка для домену
+            domain_buttons.append([KeyboardButton(text=domain)])
 
         # Додаємо кнопку "Повернутися назад"
         domain_buttons.append([KeyboardButton(text="Повернутися назад")])
@@ -234,14 +246,6 @@ async def delete_domain(message: Message):
     # Повертаємось до списку доменів
     await list_domains(message)
 
-# Обробник кнопки "Повернутися назад"
-@dp.message(lambda message: message.text == "Повернутися назад")
-async def back_to_main_menu(message: Message):
-    user_id = message.from_user.id
-    user_state[user_id] = 'main_menu'  # Скидаємо стан користувача або встановлюємо на основний стан
-    await message.answer("🔙 Ви повернулися в головне меню.", reply_markup=get_start_keyboard(user_id))
-
-
 # Waiting fot domain
 @dp.message(lambda message: user_state.get(message.from_user.id) == 'waiting_for_domain')
 async def add_domain(message: Message):
@@ -265,36 +269,53 @@ async def add_domain(message: Message):
     # Повертаємося до меню вайтлиста
     await show_whitelist_menu(message)
 
-
-@dp.message(lambda message: message.text == "🚀 Відправка заявок")
-async def start_requesting(message: Message):
-    user_id = message.from_user.id
-    user_state[user_id] = 'main_menu'
-    buttons = [
-        [InlineKeyboardButton(text="🚀 Запустити відправку заявок", callback_data="start_requesting")],
-        [InlineKeyboardButton(text="📋 Активні сесії", callback_data="list_domains")],
-    ]
-    await message.answer("Виберіть опцію:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-
-
 # Обробник натискання інлайн кнопок відправки заявок
 @dp.callback_query(lambda callback_query: callback_query.data in ["start_requesting", "list_domains"])
-async def handle_callback(callback_query: CallbackQuery):
+async def handle_sending_requests(callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
     if callback_query.data == "start_requesting":
         await callback_query.message.edit_text("Ви обрали: Запустити відправку заявок")
         await initiate_request(callback_query.message, user_id)
     elif callback_query.data == "list_domains":
         await callback_query.message.edit_text("Ви обрали: Активні сесії")
-        await list_domains(callback_query.message, user_id)
+        await activate_requesting(callback_query.message, user_id)
+
+async def activate_requesting(message, user_id):
+    user_active_sessions = active_sessions.get(user_id, [])
+
+    if not user_active_sessions:
+        await message.answer("У вас поки немає активних сесій.")
+    else:
+        buttons = [
+            [InlineKeyboardButton(text=user_active_sessions[id], callback_data=f"remove_session_{id}")] for id in range(len(user_active_sessions))
+        ]
+        await message.answer("Натисніть на сесію, яку хочете зупинити:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+
+
+@dp.callback_query(lambda callback_query: callback_query.data.startswith("remove_session_"))
+async def handle_remove_session(callback_query: CallbackQuery):
+    user_id = callback_query.from_user.id
+    try:
+        session_id = int(callback_query.data.split("_")[-1])
+        session = active_sessions[user_id][session_id]
+        active_sessions[user_id].remove(session)
+        task = active_tasks[user_id].pop(session)
+        task.cancel()
+        await callback_query.message.edit_text(f"Сесія {session} зупинена.")
+        await activate_requesting(callback_query.message, user_id)
+    except ValueError as e:
+        await callback_query.message.edit_text("Невідома сесія.")
+        return await callback_query.message.answer("Не вдалось розпізнати сесію.")
 
 # Обробник кнопки "Запустити відправку заявок"
 @dp.message(lambda message:
-    (user_state.get(message.from_user.id) == 'waiting_for_start' or user_state.get(message.from_user.id) == 'main_menu')
-    and message.text == "🚀 Запустити відправку заявок")
+            (user_state.get(message.from_user.id) == 'waiting_for_start' or user_state.get(
+                message.from_user.id) == 'main_menu')
+            and message.text == "🚀 Запустити відправку заявок")
 async def initiate_request(message: Message, user_id=None):
     user_id = user_id or message.from_user.id
-    logger.info(f"Користувач {user_id} натиснув кнопку 'Запустити відправку заявок'")
+    logger.info(
+        f"Користувач {user_id} натиснув кнопку 'Запустити відправку заявок'")
 
     user_data = users.get(user_id, {})
     applications_sent = user_data.get('applications_sent', 0)
@@ -322,7 +343,8 @@ async def initiate_request(message: Message, user_id=None):
 async def handle_url(message: Message):
     url = message.text
     user_id = message.from_user.id
-    domain = extract_domain(url)  # Реалізуйте цю функцію для отримання домену з URL
+    # Реалізуйте цю функцію для отримання домену з URL
+    domain = extract_domain(url)
 
     # Перевірка, чи існує домен у вайтлісті інших користувачів
     for uid, data in users.items():
@@ -333,7 +355,10 @@ async def handle_url(message: Message):
     # Перевірка валідності URL
     if is_valid_url(url):
         user_urls[user_id] = url
-        active_sessions[user_id] = active_sessions.get(user_id, []) + [url]
+        user_active_sessions = active_sessions.get(user_id, [])
+        if url in user_active_sessions:
+            return await message.answer(f"❌ Домен '{domain}' вже існує у активних сесіях. Будь ласка, введіть інший домен.")
+        active_sessions[user_id] = user_active_sessions + [url]
         user_state[user_id] = 'waiting_for_frequency'
         await message.answer("🕰 Як швидко будуть відправлятися заявки?", reply_markup=frequency_keyboard)
     else:
@@ -342,11 +367,13 @@ async def handle_url(message: Message):
 
 # Обробник вибору тривалості
 @dp.message(lambda message: user_state.get(message.from_user.id) in ['waiting_for_frequency', 'waiting_for_duration'] and
-              message.text in ["Без затримки 🚀", "1 заявка в 10 секунд ⏳", "1 заявка в 10 хвилин ⌛", "1 заявка в 60 хвилин ⌛",
-                               "1 хвилина ⏳", "15 хвилин ⏳", "30 хвилин ⏳", "1 година ⏳", "3 години ⏳", "Необмежено ⏳"])
+            message.text in ["Без затримки 🚀", "1 заявка в 10 секунд ⏳", "1 заявка в 10 хвилин ⌛", "1 заявка в 60 хвилин ⌛",
+                             "1 хвилина ⏳", "15 хвилин ⏳", "30 хвилин ⏳", "1 година ⏳", "3 години ⏳", "Необмежено ⏳"])
 async def handle_frequency_and_duration(message: Message):
     user_id = message.from_user.id
     user_data = users.get(user_id, {})
+    if user_id not in active_tasks:
+        active_tasks[user_id] = {}
 
     # Обробка вибору частоти
     if user_state[user_id] == 'waiting_for_frequency':
@@ -355,11 +382,12 @@ async def handle_frequency_and_duration(message: Message):
 
         # Якщо статус "demo", обираємо частоту, ігноруємо тривалість
         if user_data.get('status') == 'demo':
-            user_state[user_id] = 'active'
+            active_sending[user_id] = True
             await message.answer("💫 Частота обрана. Вибір тривалості відправки заявок у демо статусі недоступний.")
             website_url = user_urls[user_id]
             await message.answer(f"🚀 Космічний шатл з купою заявок вже летить на сайт: {website_url}", reply_markup=stop_keyboard)
-            asyncio.create_task(request_loop(user_id, frequency, duration=None))  # Демо: тривалість None (без обмежень)
+            # Демо: тривалість None (без обмежень)
+            active_tasks[user_id][website_url] = asyncio.create_task(request_loop(user_id, frequency, duration=None, url=website_url))
             return
 
         # Для інших статусів
@@ -384,15 +412,16 @@ async def handle_frequency_and_duration(message: Message):
 
         # Підготовка до запуску відправки заявок
         frequency = user_frequencies[user_id]
-        user_state[user_id] = 'active'
+        active_sending[user_id] = True
         website_url = user_urls[user_id]
         await message.answer(f"🚀 Космічний шатл з купою заявок вже летить на сайт: {website_url}", reply_markup=stop_keyboard)
 
         # Запуск request_loop з вказаною тривалістю
-        asyncio.create_task(request_loop(user_id, frequency, duration=user_durations.get(user_id)))
+        active_tasks[user_id][website_url] = asyncio.create_task(request_loop(
+            user_id, frequency, duration=duration_mapping[message.text], url=website_url))
 
 # Обробник вибору частоти
-async def send_requests(user_id, frequency):
+async def send_requests(user_id, frequency, url=None):
     delay_mapping = {
         "Без затримки 🚀": 0,
         "1 заявка в 10 секунд ⏳": 10,
@@ -405,13 +434,16 @@ async def send_requests(user_id, frequency):
     # Формування проксі
     proxies = []
     if USE_PROXY_1:
-        proxy_1 = f"http://{PROXY_LOGIN_1}:{PROXY_PASSWORD_1}@{PROXY_IP_1}:{PROXY_PORT_1}"
+        proxy_1 = f"http://{PROXY_LOGIN_1}:{
+            PROXY_PASSWORD_1}@{PROXY_IP_1}:{PROXY_PORT_1}"
         proxies.append(proxy_1)
     if USE_PROXY_2:
-        proxy_2 = f"http://{PROXY_LOGIN_2}:{PROXY_PASSWORD_2}@{PROXY_IP_2}:{PROXY_PORT_2}"
+        proxy_2 = f"http://{PROXY_LOGIN_2}:{
+            PROXY_PASSWORD_2}@{PROXY_IP_2}:{PROXY_PORT_2}"
         proxies.append(proxy_2)
     if USE_PROXY_3:
-        proxy_3 = f"http://{PROXY_LOGIN_3}:{PROXY_PASSWORD_3}@{PROXY_IP_3}:{PROXY_PORT_3}"
+        proxy_3 = f"http://{PROXY_LOGIN_3}:{
+            PROXY_PASSWORD_3}@{PROXY_IP_3}:{PROXY_PORT_3}"
         proxies.append(proxy_3)
 
     attempts = 3  # Загальна кількість спроб
@@ -422,16 +454,17 @@ async def send_requests(user_id, frequency):
 
         async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
             try:
-                logger.info(f"Надсилаємо GET запит до: {user_urls[user_id]}")
+                logger.info(f"Надсилаємо GET запит до: {url}")
                 headers = {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36'
                 }
 
-                async with session.get(user_urls[user_id], proxy=proxy_url, headers=headers) as response:
+                async with session.get(url, proxy=proxy_url, headers=headers) as response:
                     logger.info(f"Отримано відповідь: {response.status}")
                     if response.status != 200:
                         if attempt < attempts - 1:  # Якщо це не остання спроба
-                            logger.warning("Сайт недоступний. Спробуємо ще раз...")
+                            logger.warning(
+                                "Сайт недоступний. Спробуємо ще раз...")
                             await asyncio.sleep(10)  # Затримка перед повтором
                             continue  # Повертаємось до початку циклу
                         return f"Сайт недоступний. Код статусу: {response.status}."
@@ -446,10 +479,13 @@ async def send_requests(user_id, frequency):
                     action = form.get('action')
                     if action:
                         if not action.startswith('http'):
-                            base_url = user_urls[user_id]
+                            # base_url = user_urls[user_id]
+                            base_url = url
                             split_url = urlsplit(base_url)
-                            base_url_without_query = urlunsplit((split_url.scheme, split_url.netloc, split_url.path.rstrip('/') + '/', '', ''))
-                            action = f"{base_url_without_query}{action.lstrip('/')}"
+                            base_url_without_query = urlunsplit(
+                                (split_url.scheme, split_url.netloc, split_url.path.rstrip('/') + '/', '', ''))
+                            action = f"{base_url_without_query}{
+                                action.lstrip('/')}"
 
                         logger.info(f"Формований URL дії: {action}")
 
@@ -472,9 +508,11 @@ async def send_requests(user_id, frequency):
                     for select in selects:
                         select_name = select.get('name')
                         options = select.find_all('option')
-                        valid_options = [option for option in options if option.get('value')]
+                        valid_options = [
+                            option for option in options if option.get('value')]
                         if valid_options:
-                            selected_option = random.choice(valid_options).get('value')
+                            selected_option = random.choice(
+                                valid_options).get('value')
                             data[select_name] = selected_option
 
                     logger.info(f"Дані, які будуть надіслані: {data}")
@@ -482,27 +520,31 @@ async def send_requests(user_id, frequency):
                     for post_attempt in range(attempts):
                         async with session.post(action, data=data, proxy=proxy_url) as post_response:
                             if post_response.status == 200:
-                                logger.info(f"Запит на {action} успішно надіслано.")
+                                logger.info(
+                                    f"Запит на {action} успішно надіслано.")
                                 user_request_counter[user_id] += 1
                                 return None  # Успішно відправлено
                             else:
-                                logger.error(f"Помилка при відправці: {post_response.status}")
+                                logger.error(f"Помилка при відправці: {
+                                             post_response.status}")
                                 if post_attempt < attempts - 1:  # Якщо це не остання спроба
-                                    await asyncio.sleep(10)  # Затримка 10 секунд перед повтором
+                                    # Затримка 10 секунд перед повтором
+                                    await asyncio.sleep(10)
                                 else:
                                     return "Не вдалося відправити заявку."
 
             except aiohttp.ClientError as e:
                 logger.error(f"Помилка при використанні проксі: {e}")
                 if attempt < attempts - 1:  # Якщо це не остання спроба
-                    await asyncio.sleep(10)  # Затримка 10 секунд перед повтором
+                    # Затримка 10 секунд перед повтором
+                    await asyncio.sleep(10)
                 else:
                     return "Проблема з проксі."
 
     return None  # Успішно відправлено
 
 
-async def request_loop(user_id, frequency, duration):
+async def request_loop(user_id, frequency, duration, url):
     user_request_counter[user_id] = 0  # Скинути лічильник
     delay_mapping = {
         "Без затримки 🚀": 0,
@@ -515,19 +557,21 @@ async def request_loop(user_id, frequency, duration):
     user_data = users[user_id]
 
     # Якщо статус demo, кількість заявок для відправки обмежується
-    requests_to_send = 50 - user_data['applications_sent'] if user_data.get('status') == 'demo' else float('inf')
+    requests_to_send = 50 - \
+        user_data['applications_sent'] if user_data.get(
+            'status') == 'demo' else float('inf')
 
     # Обчислити час закінчення, якщо тривалість обмежена
     end_time = None
     if duration is not None:
         end_time = time.time() + duration
 
-    while user_state.get(user_id) == 'active' and requests_to_send > 0:
+    # while user_state.get(user_id) == 'active' and requests_to_send > 0:
+    while active_sending.get(user_id) and requests_to_send > 0:
         # Перевірка на обмеження за часом
         if end_time is not None and time.time() >= end_time:
             break
-
-        error_message = await send_requests(user_id, frequency)
+        error_message = await send_requests(user_id, frequency, url)
         if error_message:
             await bot.send_message(user_id, f"❌ {error_message}")
             user_state[user_id] = 'waiting_for_start'
@@ -540,19 +584,26 @@ async def request_loop(user_id, frequency, duration):
         logger.info(f"Затримка перед наступним запитом: {delay} секунд.")
         await asyncio.sleep(delay)
 
-    if user_state.get(user_id) == 'active':
+    # if user_state.get(user_id) == 'active':
+    if active_sending.get(user_id):
         user_state[user_id] = 'waiting_for_start'
-        users[user_id]['applications_sent'] += user_request_counter[user_id]  # Оновити загальний лічильник
+        # Оновити загальний лічильник
+        users[user_id]['applications_sent'] += user_request_counter[user_id]
         save_users(users)  # Зберегти оновлення
         await bot.send_message(user_id,
-                               f"✅ Відправка заявок завершена\n✉️ Всього відправлено заявок: {user_request_counter[user_id]}",
+                               f"✅ Відправка заявок завершена\n✉️ Всього відправлено заявок: {
+                                   user_request_counter[user_id]}",
                                reply_markup=start_keyboard)
 
 # Обробник зупинки
-@dp.message(lambda message: user_state.get(message.from_user.id) == 'active' and message.text == "Зупинити відправку ❌")
+# @dp.message(lambda message: user_state.get(message.from_user.id) == 'active' and message.text == "Зупинити відправку ❌")
+@dp.message(lambda message: active_sending.get(message.from_user.id) and message.text == "Зупинити відправку ❌")
 async def stop_sending(message: Message):
     user_id = message.from_user.id
     user_state[user_id] = 'waiting_for_start'
+    active_sending[user_id] = False
+    active_tasks.pop(user_id, None)
+    active_sessions.pop(user_id, None)
     total_requests = user_request_counter.get(user_id, 0)
 
     # Оновлення загальної кількості заявок у users.json

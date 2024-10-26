@@ -40,7 +40,9 @@ admin_duration_keyboard = ReplyKeyboardMarkup(
 # Кнопка зупинки відправки
 stop_keyboard = ReplyKeyboardMarkup(
     keyboard=[
+        [KeyboardButton(text="🚀 Меню заявок")],
         [KeyboardButton(text="Зупинити відправку ❌")],
+        [KeyboardButton(text="Повернутися назад")],
     ],
     resize_keyboard=True
 )
