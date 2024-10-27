@@ -3,8 +3,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 
 from .command_router import UserState
-from shared.funcs import get_user_status, get_start_keyboard, save_users, users, status_translation
+from shared.funcs import get_user_status, get_start_keyboard, save_users, users
 from shared.config import user_state
+from shared.data import status_translation
 
 
 admin_router = Router()
@@ -18,7 +19,6 @@ async def handle_user_id_input(message: Message, state: FSMContext):
     user_status = get_user_status(user_id)
 
     if target_user_id.isdigit() and int(target_user_id) in users:
-        # user_state[user_id] = 'waiting_for_new_status'
         await state.set_state(UserState.waiting_for_new_status)
         user_state['target_user_id'] = int(target_user_id)
         await message.answer(
@@ -47,7 +47,6 @@ async def handle_new_status_selection(message: Message, state: FSMContext):
         users[target_user_id]['status'] = new_status
         save_users(users)  # Зберігаємо зміни
         await message.answer(f"✅ Статус користувача з ID {target_user_id} змінено на {status_translation.get(new_status, new_status)}.", reply_markup=get_start_keyboard(admin_id))
-        # user_state[admin_id] = 'waiting_for_start'
         await state.set_state(UserState.waiting_for_start)
     else:
         await message.answer("⚠️ Некоректний статус. Будь ласка, виберіть із запропонованих варіантів.")

@@ -21,9 +21,15 @@ request_router = Router()
 @request_router.callback_query(lambda callback_query: callback_query.data in ["start_requesting", "list_domains"])
 async def handle_sending_requests(callback_query: CallbackQuery, state: FSMContext):
     user_id = callback_query.from_user.id
+    user_status = users.get(user_id, {}).get('status')
     if callback_query.data == "start_requesting":
         await callback_query.message.edit_text("Ви обрали: Запустити відправку заявок")
-        await initiate_request(callback_query.message, state, user_id)
+        if user_status == 'demo' and active_sessions.get(user_id, []):
+            await callback_query.message.answer("❌ В демо статусі доступна можливість запускати одночасно лише одну сесію.")
+        elif user_status == 'unlim' and len(active_sessions.get(user_id, [])) > 2:
+            await callback_query.message.answer("❌ Ви можете запускати лише три сесії одночасно.")
+        else:
+            await initiate_request(callback_query.message, state, user_id)
     elif callback_query.data == "list_domains":
         await callback_query.message.edit_text("Ви обрали: Активні сесії")
         await activate_requesting(callback_query.message, user_id)
@@ -52,7 +58,11 @@ async def handle_remove_session(callback_query: CallbackQuery):
         active_sessions[user_id].remove(session)
         task = active_tasks[user_id].pop(session)
         task.cancel()
-        await callback_query.message.edit_text(f"Сесія {session} зупинена.")
+        # Додавання кількості запитів до кількості відправлених заявок
+        count_requests = user_request_counter[user_id].pop(session)
+        users[user_id]['applications_sent'] += count_requests
+        save_users(users)
+        await callback_query.message.edit_text(f"Сесія {session} зупинена успішно.\nЗаявок відправлено: {count_requests}")
         await activate_requesting(callback_query.message, user_id)
     except ValueError as e:
         await callback_query.message.edit_text("Невідома сесія.")
@@ -95,10 +105,10 @@ async def handle_url(message: Message, state: FSMContext):
     domain = extract_domain(url)
 
     # Перевірка, чи існує домен у вайтлісті інших користувачів
-    for uid, data in users.items():
+    for data in users.values():
+        print(domain)
         if 'whitelist' in data and domain in data['whitelist']:
-            await message.answer(f"❌ Домен '{domain}' вже існує у вайтлісті іншого користувача. Будь ласка, введіть інший домен.")
-            return
+            return await message.answer(f"❌ Домен '{domain}' вже існує у вайтлісті іншого користувача. Будь ласка, введіть інший домен.")
 
     # Перевірка валідності URL
     if is_valid_url(url):
@@ -136,7 +146,7 @@ async def handle_frequency_and_duration(message: Message, state: FSMContext):
             await message.answer(f"🚀 Космічний шатл з купою заявок вже летить на сайт: {website_url}", reply_markup=stop_keyboard)
             # Демо: тривалість None (без обмежень)
             active_tasks[user_id][website_url] = asyncio.create_task(
-                request_loop(user_id, frequency, website_url, state)
+                request_loop(user_id, frequency, website_url, state, message)
             )
             return
 
@@ -167,15 +177,10 @@ async def handle_frequency_and_duration(message: Message, state: FSMContext):
 
         # Запуск request_loop з вказаною тривалістю
         active_tasks[user_id][website_url] = asyncio.create_task(
-            request_loop(user_id, frequency, website_url, state, duration_mapping.get(message.text, None))
+            request_loop(user_id, frequency, website_url, state, message, duration_mapping.get(message.text, None))
         )
         await message.answer(f"🚀 Космічний шатл з купою заявок вже летить на сайт: {website_url}", reply_markup=stop_keyboard)
         await state.clear()
-
-# Відправка заявок
-async def send_requests(user_id, url=None):
-    return await send_request_to_form(url, user_id)
-
 
 async def request_loop(user_id, frequency, url, state, message, duration=None):
     if user_id in user_request_counter:
@@ -204,7 +209,7 @@ async def request_loop(user_id, frequency, url, state, message, duration=None):
         # Перевірка на обмеження за часом
         if end_time is not None and time.time() >= end_time:
             break
-        error_message = await send_requests(user_id, url)
+        error_message = await send_request_to_form(url, user_id)
         if error_message:
             await message.answer(f"❌ {error_message}")
             active_sessions[user_id].remove(url)

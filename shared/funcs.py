@@ -102,17 +102,12 @@ def register_user(user_id):
             'applications_per_url': {}
         }
         save_users(users)
+
+# Функція для отримання домену з URL
 def extract_domain(url: str) -> str:
     extracted = tldextract.extract(url)
     domain = f"{extracted.domain}.{extracted.suffix}"
     return domain
-
-# Назви статусів
-status_translation = {
-    'demo': 'Демо',
-    'unlim': 'Необмежений',
-    'admin': 'Адміністратор'
-}
 
 # Функція для перевірки чи користувач досяг ліміту заявок
 def is_demo_limit_reached(user_id):

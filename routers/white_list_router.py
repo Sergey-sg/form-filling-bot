@@ -1,11 +1,9 @@
 from aiogram import Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
-from urllib.parse import urlparse
-
 
 from .command_router import show_whitelist_menu, UserState
-from shared.funcs import save_users, users
+from shared.funcs import extract_domain, save_users, users
 
 
 white_list_router = Router()
@@ -19,16 +17,13 @@ async def request_domain(message: Message, state: FSMContext):
 
     # Перевірка статусу користувача
     if user_data.get('status') == 'demo':
-        await message.answer("❌ Ця функція доступна тільки у платній версії боту.")
-        return
+        return await message.answer("❌ Ця функція доступна тільки у платній версії боту.")
 
     # Перевірка, чи користувач досяг ліміту на 3 домени
     if user_data.get('status') != 'admin' and len(user_domains) >= 3:
-        await message.answer("❌ Ви не можете додати більше 3-х доменів.")
-        return
+        return await message.answer("❌ Ви не можете додати більше 3-х доменів.")
 
     await message.answer("📩 Відправте посилання на сайт, домен якого ви хочете додати.")
-    # user_state[user_id] = 'waiting_for_domain'
     await state.set_state(UserState.waiting_for_domain)
 
 # Функція для обробки натискання на кнопку "Список доменів"
@@ -80,14 +75,12 @@ async def delete_domain(message: Message):
 
 # Функція для обробки натискання на кнопку "Додати домен"
 @white_list_router.message(UserState.waiting_for_domain)
-async def add_domain(message: Message):
+async def add_domain(message: Message, state: FSMContext):
     user_id = message.from_user.id
     user_domain = message.text
 
     # Отримуємо домен з URL
-    domain = urlparse(user_domain).netloc
-    if domain.startswith('www.'):
-        domain = domain[4:]
+    domain = extract_domain(user_domain)
 
     # Додаємо домен до користувача
     users[user_id]['whitelist'] = users[user_id].get('whitelist', [])
@@ -99,4 +92,4 @@ async def add_domain(message: Message):
         await message.answer("❌ Цей домен вже додано до вайтлиста.")
 
     # Повертаємося до меню вайтлиста
-    await show_whitelist_menu(message)
+    await show_whitelist_menu(message, state)

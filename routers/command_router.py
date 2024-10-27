@@ -5,7 +5,8 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from datetime import datetime
 
-from shared.funcs import get_start_keyboard, register_user, status_translation, users
+from shared.funcs import get_start_keyboard, register_user, users
+from shared.data import status_translation
 
 commands_router = Router()
 
@@ -20,17 +21,12 @@ class UserState(StatesGroup):
     main_menu = State()
 
 
-# async def clear_state(user_id):
-#     user_state.pop(user_id, None)
-
 # Обробник команди /start
 @commands_router.message(Command('start'))
 async def start_handler(message: Message, state: FSMContext):
     user_id = message.from_user.id
     register_user(user_id)
-    # await clear_state(user_id)
     await state.set_state(UserState.waiting_for_start)
-    # user_state[user_id] = 'waiting_for_start'
     await message.answer(
         '⚡️ Привіт! За допомогою цього боту ти можеш відправити заявки на будь які сайти з формою\n'
         '💎 Ми маємо різні режими з вибором тривалості та швидкості відправки заявок\n'
@@ -42,7 +38,6 @@ async def start_handler(message: Message, state: FSMContext):
 # Обробник кнопки "Підтримка"
 @commands_router.message(lambda message: message.text == "🧑‍💻 Підтримка")
 async def support_handler(message: Message, state: FSMContext):
-    # await clear_state(message.from_user.id)
     await state.clear()
     await message.answer("✉️ Для звʼязку з нами звертайтеся до...")
 
@@ -50,7 +45,6 @@ async def support_handler(message: Message, state: FSMContext):
 @commands_router.message(lambda message: message.text == "🤵 Профіль")
 async def profile_handler(message: Message, state: FSMContext):
     user_id = message.from_user.id
-    # await clear_state(user_id)
     await state.clear()
     user_data = users.get(user_id, {})
     registration_date = user_data.get('registration_date')
@@ -74,22 +68,17 @@ async def profile_handler(message: Message, state: FSMContext):
 
 @commands_router.message(lambda message: message.text == "🚀 Відправка заявок" or message.text == "🚀 Меню заявок")
 async def start_requesting(message: Message, state: FSMContext):
-    user_id = message.from_user.id
-    # user_state[user_id] = 'main_menu'
     await state.set_state(UserState.main_menu)
     buttons = [
-        [InlineKeyboardButton(
-            text="🚀 Запустити відправку заявок", callback_data="start_requesting")],
-        [InlineKeyboardButton(text="📋 Активні сесії",
-                              callback_data="list_domains")],
+        [InlineKeyboardButton(text="🚀 Запустити відправку заявок", callback_data="start_requesting")],
+        [InlineKeyboardButton(text="📋 Активні сесії", callback_data="list_domains")],
     ]
-    await message.answer("Виберіть опцію:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await message.answer("Оберіть опцію:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     
 # Whitelist
 @commands_router.message(lambda message: message.text == "🔘 Whitelist")
 async def show_whitelist_menu(message: Message, state: FSMContext):
     user_id = message.from_user.id
-    # await clear_state(user_id)
     await state.clear()
     user_data = users.get(user_id, {})
 
@@ -114,14 +103,11 @@ async def show_whitelist_menu(message: Message, state: FSMContext):
 async def back_to_main_menu(message: Message, state: FSMContext):
     user_id = message.from_user.id
     # Скидаємо стан користувача або встановлюємо на основний стан
-    # user_state[user_id] = 'main_menu'
     await state.set_state(UserState.main_menu)
     await message.answer("🔙 Ви повернулися в головне меню.", reply_markup=get_start_keyboard(user_id))
 
 # Обробник кнопки "Змінити статус" для адмінів
 @commands_router.message(lambda message: users.get(message.from_user.id, {}).get('status') == 'admin' and message.text == "💠 Змінити статус")
 async def change_status_handler(message: Message, state: FSMContext):
-    user_id = message.from_user.id
-    # user_state[user_id] = 'waiting_for_user_id'
     await state.set_state(UserState.waiting_for_user_id)
     await message.answer("👤 Введіть Telegram ID користувача, якому хочете змінити статус:")
