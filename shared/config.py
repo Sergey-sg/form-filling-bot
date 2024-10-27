@@ -1,6 +1,12 @@
 import os
 import logging
+from dotenv import load_dotenv
 
+# Define the path to the .env file
+env_path = '.env'
+
+# Load the environment variables from the .env file
+load_dotenv(env_path)
 
 # Налаштування логування
 logging.basicConfig(level=logging.INFO)
