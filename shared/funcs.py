@@ -2,18 +2,14 @@
 import aiohttp
 import random
 import phonenumbers
-
 import re
-from datetime import datetime
 import json
-
 import tldextract
+from datetime import datetime
 
-from keyboards import demo_duration_keyboard, admin_duration_keyboard, start_keyboard, admin_start_keyboard
-from data import ukrainian_names, operators
-
-
-USERS_FILE = 'users.json'
+from .keyboards import demo_duration_keyboard, admin_duration_keyboard, start_keyboard, admin_start_keyboard
+from .data import ukrainian_names, operators
+from .config import USERS_FILE
 
 
 # Функція для генерації випадкового українського імені
